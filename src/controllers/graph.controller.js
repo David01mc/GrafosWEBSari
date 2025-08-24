@@ -28,16 +28,40 @@ exports.createNode = async (req, res) => {
 
   const session = getSession();
   try {
-    // Si no tienes APOC en Aura, usa etiqueta fija: CREATE (n:Person {...}) RETURN n
     const result = await session.run(
-      `
-      CREATE (n:\`${label}\` {name:$name, avatar_url:$avatar})
-      RETURN n
-      `,
+      `CREATE (n:\`${label}\` {name: $name, avatar_url: $avatar}) RETURN n`,
       { name, avatar: avatar_url || null }
     );
     const { nodes } = recordsToGraph(result.records);
     res.json({ created: nodes[0] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    await session.close();
+  }
+};
+
+// PUT /api/update-node
+exports.updateNode = async (req, res) => {
+  const { nodeId, name, avatar_url } = req.body || {};
+  if (!nodeId || !name) return res.status(400).json({ error: "Faltan 'nodeId' o 'name'" });
+
+  const session = getSession();
+  try {
+    const result = await session.run(
+      `MATCH (n) WHERE id(n) = $id 
+       SET n.name = $name
+       ${avatar_url !== undefined ? ', n.avatar_url = $avatar' : ''}
+       RETURN n`,
+      { 
+        id: Number(nodeId), 
+        name, 
+        ...(avatar_url !== undefined && { avatar: avatar_url })
+      }
+    );
+    const { nodes } = recordsToGraph(result.records);
+    res.json({ updated: nodes[0] });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -56,12 +80,10 @@ exports.createRel = async (req, res) => {
   const session = getSession();
   try {
     const result = await session.run(
-      `
-      MATCH (a),(b)
-      WHERE id(a) = $from AND id(b) = $to
-      MERGE (a)-[r:\`${type}\`]->(b)
-      RETURN a, r, b
-      `,
+      `MATCH (a), (b)
+       WHERE id(a) = $from AND id(b) = $to
+       MERGE (a)-[r:\`${type}\`]->(b)
+       RETURN a, r, b`,
       { from: Number(fromId), to: Number(toId) }
     );
     const graph = recordsToGraph(result.records);
