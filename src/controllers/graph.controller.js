@@ -70,6 +70,30 @@ exports.updateNode = async (req, res) => {
   }
 };
 
+// DELETE /api/delete-node
+exports.deleteNode = async (req, res) => {
+  const { nodeId } = req.body || {};
+  if (!nodeId) return res.status(400).json({ error: "Falta 'nodeId'" });
+
+  const session = getSession();
+  try {
+    const result = await session.run(
+      `MATCH (n) WHERE id(n) = $id
+       DETACH DELETE n
+       RETURN count(n) as deleted`,
+      { id: Number(nodeId) }
+    );
+    
+    const deletedCount = result.records[0].get('deleted').toNumber();
+    res.json({ deleted: deletedCount > 0, nodeId: Number(nodeId) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    await session.close();
+  }
+};
+
 // POST /api/create-rel
 exports.createRel = async (req, res) => {
   const { fromId, toId, type = "FRIEND_OF" } = req.body || {};

@@ -195,6 +195,38 @@ function pintar(nodes, edges) {
         editarNodo(params.nodes[0]);
       }
     });
+
+    // Eliminación rápida con tecla Delete
+    network.on("selectNode", function(params) {
+      const handleDelete = (e) => {
+        if (e.key === 'Delete' && params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const node = network.body.data.nodes.get(nodeId);
+          
+          const confirmDelete = confirm(`¿Eliminar el nodo "${node.label}"?\n\nPresiona OK para confirmar.`);
+          if (confirmDelete) {
+            api("/api/delete-node", {
+              method: "DELETE",
+              body: JSON.stringify({ nodeId })
+            }).then(async () => {
+              await cargarGrafo();
+              alert("Nodo eliminado!");
+            }).catch(e => {
+              alert("Error eliminando nodo: " + e.message);
+            });
+          }
+          
+          document.removeEventListener('keydown', handleDelete);
+        }
+      };
+      
+      document.addEventListener('keydown', handleDelete);
+      
+      // Limpiar listener cuando se deselecciona
+      network.once("deselectNode", () => {
+        document.removeEventListener('keydown', handleDelete);
+      });
+    });
     
   } catch (error) {
     console.error("Error creando la red:", error);
@@ -202,7 +234,7 @@ function pintar(nodes, edges) {
   }
 }
 
-// Nueva función para editar nodos con foto
+// Nueva función para editar nodos con foto y eliminación
 function editarNodo(nodeId) {
   const node = network.body.data.nodes.get(nodeId);
   
@@ -319,33 +351,6 @@ document.getElementById("btn-physics").addEventListener("click", () => {
   if (network) network.setOptions({ physics: { enabled: physicsOn } });
   document.getElementById("btn-physics").textContent =
     physicsOn ? "Desactivar físicas" : "Activar físicas";
-});
-
-document.getElementById("btn-reorganizar").addEventListener("click", () => {
-  if (network) {
-    // Aplicar layout jerárquico temporalmente
-    network.setOptions({
-      layout: {
-        hierarchical: {
-          direction: 'UD',
-          sortMethod: 'directed',
-          nodeSpacing: 150,
-          levelSeparation: 200,
-          blockShifting: true,
-          edgeMinimization: true
-        }
-      },
-      physics: { enabled: false }
-    });
-    
-    // Después de 2 segundos, volver al layout normal
-    setTimeout(() => {
-      network.setOptions({
-        layout: { hierarchical: false },
-        physics: { enabled: physicsOn }
-      });
-    }, 2000);
-  }
 });
 
 function decorarAristas(edges) {
