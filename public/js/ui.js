@@ -206,7 +206,7 @@ function pintar(nodes, edges) {
           const confirmDelete = confirm(`¿Eliminar el nodo "${node.label}"?\n\nPresiona OK para confirmar.`);
           if (confirmDelete) {
             api("/api/delete-node", {
-              method: "DELETE",
+              method: "POST", // Changed from DELETE to POST
               body: JSON.stringify({ nodeId })
             }).then(async () => {
               await cargarGrafo();
@@ -281,7 +281,7 @@ function editarNodo(nodeId) {
     
     try {
       await api("/api/delete-node", {
-        method: "DELETE",
+        method: "POST", // Changed from DELETE to POST
         body: JSON.stringify({ nodeId })
       });
       

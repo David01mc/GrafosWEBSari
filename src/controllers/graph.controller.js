@@ -70,10 +70,15 @@ exports.updateNode = async (req, res) => {
   }
 };
 
-// DELETE /api/delete-node
+// POST /api/delete-node - Changed from DELETE to POST
 exports.deleteNode = async (req, res) => {
+  console.log('DELETE endpoint called with body:', req.body);
+  
   const { nodeId } = req.body || {};
-  if (!nodeId) return res.status(400).json({ error: "Falta 'nodeId'" });
+  if (!nodeId) {
+    console.log('Missing nodeId in request body');
+    return res.status(400).json({ error: "Falta 'nodeId'" });
+  }
 
   const session = getSession();
   try {
@@ -85,9 +90,10 @@ exports.deleteNode = async (req, res) => {
     );
     
     const deletedCount = result.records[0].get('deleted').toNumber();
+    console.log(`Node ${nodeId} deletion result:`, deletedCount);
     res.json({ deleted: deletedCount > 0, nodeId: Number(nodeId) });
   } catch (e) {
-    console.error(e);
+    console.error('Error deleting node:', e);
     res.status(500).json({ error: e.message });
   } finally {
     await session.close();
