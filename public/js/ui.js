@@ -12,7 +12,8 @@ async function api(path, options = {}) {
 
 async function cargarGrafo() {
   try {
-    // Primero intentamos obtener todo el grafo
+    console.log("Cargando grafo...");
+    
     const g1 = await api("/api/cypher", {
       method: "POST",
       body: JSON.stringify({ 
@@ -22,12 +23,35 @@ async function cargarGrafo() {
                 LIMIT 500` 
       }),
     });
+    
     console.log("Datos cargados:", g1);
-    pintar(g1.nodes || [], g1.edges || []);
+    
+    // Validar que los datos sean correctos
+    const nodes = g1.nodes || [];
+    const edges = g1.edges || [];
+    
+    console.log("Procesando:", nodes.length, "nodos y", edges.length, "relaciones");
+    
+    pintar(nodes, edges);
     await cargarSelects();
+    
   } catch (e) {
-    console.error("Error cargando grafo:", e.message);
-    mostrarMensaje("Error cargando el grafo. Revisa la consola.");
+    console.error("Error cargando grafo:", e);
+    mostrarMensaje("Error cargando el grafo: " + e.message);
+    
+    // Intentar cargar solo los nodos como fallback
+    try {
+      console.log("Intentando fallback solo con nodos...");
+      const g2 = await api("/api/cypher", {
+        method: "POST",
+        body: JSON.stringify({ query: "MATCH (n) RETURN n LIMIT 300" }),
+      });
+      pintar(g2.nodes || [], []);
+      await cargarSelects();
+    } catch (e2) {
+      console.error("Error en fallback:", e2);
+      mostrarMensaje("No se pudo conectar con la base de datos.");
+    }
   }
 }
 
@@ -44,7 +68,29 @@ function pintar(nodes, edges) {
     return;
   }
 
-  const visNodes = nodes.map(n => ({
+  // Eliminar duplicados de nodos por ID
+  const uniqueNodes = [];
+  const seenNodeIds = new Set();
+  for (const n of nodes) {
+    if (!seenNodeIds.has(n.id)) {
+      seenNodeIds.add(n.id);
+      uniqueNodes.push(n);
+    }
+  }
+
+  // Eliminar duplicados de aristas por ID
+  const uniqueEdges = [];
+  const seenEdgeIds = new Set();
+  for (const e of edges) {
+    if (!seenEdgeIds.has(e.id)) {
+      seenEdgeIds.add(e.id);
+      uniqueEdges.push(e);
+    }
+  }
+
+  console.log("Después de filtrar duplicados - Nodos:", uniqueNodes.length, "Aristas:", uniqueEdges.length);
+
+  const visNodes = uniqueNodes.map(n => ({
     id: n.id,
     label: n.label,
     shape: n.avatar_url ? "circularImage" : "dot",
@@ -55,55 +101,105 @@ function pintar(nodes, edges) {
     title: n.labels ? `Labels: ${n.labels.join(", ")}<br>${escapeHtml(JSON.stringify(n.props))}` : undefined
   }));
 
-  const visEdges = edges.length > 0 ? decorarAristas(
-    edges.map(e => ({
+  const visEdges = uniqueEdges.length > 0 ? decorarAristas(
+    uniqueEdges.map(e => ({
       id: e.id,
       from: e.from,
       to: e.to,
-      arrows: "to",
+      arrows: { to: { enabled: true, scaleFactor: 1.2 } },
       label: e.type,
-      font: { align: "horizontal", size: 12, color: '#666' },
-      color: { color: '#666', highlight: '#2e7d32' },
-      width: 2
+      font: { 
+        align: "horizontal", 
+        size: 11, 
+        color: '#444',
+        background: 'rgba(255,255,255,0.8)',
+        strokeWidth: 2,
+        strokeColor: '#fff'
+      },
+      color: { 
+        color: '#666', 
+        highlight: '#2e7d32',
+        opacity: 0.8
+      },
+      width: 2,
+      selectionWidth: 4
     }))
   ) : [];
 
   console.log("Nodos vis:", visNodes.length, "Aristas vis:", visEdges.length);
 
-  const data = {
-    nodes: new vis.DataSet(visNodes),
-    edges: new vis.DataSet(visEdges),
-  };
+  try {
+    const data = {
+      nodes: new vis.DataSet(visNodes),
+      edges: new vis.DataSet(visEdges),
+    };
 
-  const options = {
-    interaction: { 
-      hover: true, 
-      tooltipDelay: 120,
-      selectConnectedEdges: false
-    },
-    physics: { 
-      enabled: physicsOn, 
-      stabilization: { iterations: 100 },
-      solver: 'barnesHut'
-    },
-    nodes: { 
-      borderWidth: 2,
-      font: { size: 14, color: '#333' }
-    },
-    edges: { 
-      smooth: { type: "dynamic" },
-      width: 2
-    }
-  };
+    const options = {
+      interaction: { 
+        hover: true, 
+        tooltipDelay: 120,
+        selectConnectedEdges: false,
+        dragNodes: true,
+        dragView: true,
+        zoomView: true
+      },
+      physics: { 
+        enabled: physicsOn, 
+        stabilization: { iterations: 150 },
+        solver: 'barnesHut',
+        barnesHut: {
+          gravitationalConstant: -2000,
+          centralGravity: 0.3,
+          springLength: 120,
+          springConstant: 0.04,
+          damping: 0.09,
+          avoidOverlap: 0.1
+        }
+      },
+      nodes: { 
+        borderWidth: 2,
+        font: { size: 14, color: '#333' },
+        margin: 10,
+        chosen: {
+          node: function(values, id, selected, hovering) {
+            values.borderColor = '#2e7d32';
+            values.borderWidth = 3;
+          }
+        }
+      },
+      edges: { 
+        smooth: { 
+          type: "dynamic",
+          forceDirection: "none",
+          roundness: 0.1
+        },
+        width: 2,
+        chosen: {
+          edge: function(values, id, selected, hovering) {
+            values.color = '#2e7d32';
+            values.width = 3;
+          }
+        }
+      },
+      layout: {
+        improvedLayout: true,
+        clusterThreshold: 150
+      }
+    };
 
-  network = new vis.Network(container, data, options);
+    network = new vis.Network(container, data, options);
 
-  // Eventos para edición
-  network.on("doubleClick", function(params) {
-    if (params.nodes.length > 0) {
-      editarNodo(params.nodes[0]);
-    }
-  });
+    // Eventos para edición
+    network.on("doubleClick", function(params) {
+      if (params.nodes.length > 0) {
+        editarNodo(params.nodes[0]);
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error creando la red:", error);
+    mostrarMensaje("Error visualizando el grafo: " + error.message);
+  }
 }
 
 // Nueva función para editar nodos con foto
@@ -119,23 +215,26 @@ function editarNodo(nodeId) {
   `;
   
   modal.innerHTML = `
-    <div style="background: white; padding: 20px; border-radius: 8px; min-width: 300px;">
-      <h3>Editar Nodo</h3>
+    <div style="background: white; padding: 20px; border-radius: 8px; min-width: 350px;">
+      <h3 style="margin: 0 0 15px 0;">Editar Nodo</h3>
       <div style="margin-bottom: 10px;">
         <label>Nombre:</label><br>
-        <input id="edit-name" value="${node.label}" style="width: 100%; padding: 8px; margin-top: 4px;">
+        <input id="edit-name" value="${node.label}" style="width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;">
       </div>
       <div style="margin-bottom: 10px;">
         <label>Avatar URL:</label><br>
-        <input id="edit-avatar-url" value="${node.image || ''}" style="width: 100%; padding: 8px; margin-top: 4px;">
+        <input id="edit-avatar-url" value="${node.image || ''}" style="width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;">
       </div>
       <div style="margin-bottom: 15px;">
         <label>Nueva foto:</label><br>
-        <input id="edit-avatar-file" type="file" accept="image/*" style="margin-top: 4px;">
+        <input id="edit-avatar-file" type="file" accept="image/*" style="margin-top: 4px; width: 100%;">
       </div>
-      <div style="display: flex; gap: 10px; justify-content: flex-end;">
-        <button id="edit-cancel" style="padding: 8px 16px;">Cancelar</button>
-        <button id="edit-save" style="padding: 8px 16px; background: #111827; color: white;">Guardar</button>
+      <div style="display: flex; gap: 10px; justify-content: space-between;">
+        <button id="edit-delete" style="padding: 8px 16px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">Eliminar</button>
+        <div style="display: flex; gap: 10px;">
+          <button id="edit-cancel" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Cancelar</button>
+          <button id="edit-save" style="padding: 8px 16px; background: #111827; color: white; border: none; border-radius: 4px; cursor: pointer;">Guardar</button>
+        </div>
       </div>
     </div>
   `;
@@ -143,6 +242,24 @@ function editarNodo(nodeId) {
   document.body.appendChild(modal);
   
   document.getElementById('edit-cancel').onclick = () => modal.remove();
+  
+  document.getElementById('edit-delete').onclick = async () => {
+    const confirmDelete = confirm(`¿Estás seguro de que quieres eliminar el nodo "${node.label}"?\n\nEsto eliminará también todas sus relaciones.`);
+    if (!confirmDelete) return;
+    
+    try {
+      await api("/api/delete-node", {
+        method: "DELETE",
+        body: JSON.stringify({ nodeId })
+      });
+      
+      modal.remove();
+      await cargarGrafo();
+      alert("Nodo eliminado exitosamente!");
+    } catch (e) {
+      alert("Error eliminando nodo: " + e.message);
+    }
+  };
   
   document.getElementById('edit-save').onclick = async () => {
     const nuevoNombre = document.getElementById('edit-name').value.trim();
@@ -186,6 +303,15 @@ function editarNodo(nodeId) {
   modal.onclick = (e) => {
     if (e.target === modal) modal.remove();
   };
+  
+  // Cerrar con Escape
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      modal.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
 }
 
 document.getElementById("btn-physics").addEventListener("click", () => {
@@ -193,6 +319,33 @@ document.getElementById("btn-physics").addEventListener("click", () => {
   if (network) network.setOptions({ physics: { enabled: physicsOn } });
   document.getElementById("btn-physics").textContent =
     physicsOn ? "Desactivar físicas" : "Activar físicas";
+});
+
+document.getElementById("btn-reorganizar").addEventListener("click", () => {
+  if (network) {
+    // Aplicar layout jerárquico temporalmente
+    network.setOptions({
+      layout: {
+        hierarchical: {
+          direction: 'UD',
+          sortMethod: 'directed',
+          nodeSpacing: 150,
+          levelSeparation: 200,
+          blockShifting: true,
+          edgeMinimization: true
+        }
+      },
+      physics: { enabled: false }
+    });
+    
+    // Después de 2 segundos, volver al layout normal
+    setTimeout(() => {
+      network.setOptions({
+        layout: { hierarchical: false },
+        physics: { enabled: physicsOn }
+      });
+    }, 2000);
+  }
 });
 
 function decorarAristas(edges) {
@@ -210,31 +363,65 @@ function decorarAristas(edges) {
   }
 
   const out = [];
-  for (const { byDir } of buckets.values()) {
-    const roundnessStep = 0.3; // Aumentado para mayor separación
+  for (const [key, { byDir }] of buckets.entries()) {
+    const totalAtoB = byDir.AtoB.length;
+    const totalBtoA = byDir.BtoA.length;
+    const hasBidirectional = totalAtoB > 0 && totalBtoA > 0;
+    
+    // Para relaciones bidireccionales, usar mayor separación
+    const roundnessStep = hasBidirectional ? 0.4 : 0.25;
+    const baseRoundness = hasBidirectional ? 0.35 : 0.15;
     
     byDir.AtoB.forEach((e, i) => {
-      out.push({
-        ...e,
-        smooth: { 
-          enabled: true, 
-          type: "curvedCW", 
-          roundness: 0.2 + (i * roundnessStep) // Offset inicial + incremento
-        }
-      });
+      if (hasBidirectional) {
+        // Si hay bidireccional, usar curva más pronunciada hacia un lado
+        out.push({
+          ...e,
+          smooth: { 
+            enabled: true, 
+            type: "curvedCW", 
+            roundness: baseRoundness + (i * roundnessStep)
+          }
+        });
+      } else {
+        // Si solo hay una dirección, usar curva suave
+        out.push({
+          ...e,
+          smooth: { 
+            enabled: true, 
+            type: "dynamic", 
+            roundness: 0.1 + (i * 0.15)
+          }
+        });
+      }
     });
+    
     byDir.BtoA.forEach((e, i) => {
-      out.push({
-        ...e,
-        smooth: { 
-          enabled: true, 
-          type: "curvedCCW", 
-          roundness: 0.2 + (i * roundnessStep) // Offset inicial + incremento
-        }
-      });
+      if (hasBidirectional) {
+        // Dirección opuesta con curva más pronunciada al otro lado
+        out.push({
+          ...e,
+          smooth: { 
+            enabled: true, 
+            type: "curvedCCW", 
+            roundness: baseRoundness + (i * roundnessStep)
+          }
+        });
+      } else {
+        // Si solo hay una dirección, usar curva suave
+        out.push({
+          ...e,
+          smooth: { 
+            enabled: true, 
+            type: "dynamic", 
+            roundness: 0.1 + (i * 0.15)
+          }
+        });
+      }
     });
   }
 
+  console.log(`Aristas decoradas: ${out.length} de ${edges.length} originales`);
   return out;
 }
 

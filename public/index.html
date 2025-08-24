@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visualizador de Amigos</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🕸️</text></svg>">
   <link rel="preconnect" href="https://unpkg.com">
   <style>
     :root { --b: #e5e7eb; --fg: #111827; --bg: #fff; --acc:#4b5563; }
@@ -23,6 +24,7 @@
     #viz { width: 100%; height: calc(100vh - 86px); border-top: 1px solid var(--b); }
     .msg { padding: 8px 12px; color:#6b7280; text-align: center; margin-top: 50px; }
     .help { font-size: 11px; color: var(--acc); margin-top: 4px; }
+    .debug { font-size: 11px; color: var(--acc); }
   </style>
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
@@ -70,7 +72,11 @@
     <div class="group">
       <button id="btn-refrescar" class="secondary" type="button">Refrescar grafo</button>
       <button id="btn-physics" class="secondary" type="button">Desactivar físicas</button>
-      <div class="help">Doble clic en nodos para editar</div>
+      <button id="btn-reorganizar" class="secondary" type="button">Reorganizar</button>
+      <div>
+        <div class="help">Doble clic: editar | Delete: eliminar</div>
+        <div class="debug"><a href="/api/debug" target="_blank">Ver debug</a></div>
+      </div>
     </div>
   </div>
 

@@ -1,9 +1,13 @@
 function toNumber(id) {
-  return typeof id?.toNumber === "function" ? id.toNumber() : Number(id);
+  if (typeof id?.toNumber === "function") {
+    return id.toNumber();
+  }
+  return Number(id);
 }
 
 function recordsToGraph(records) {
   const nodeMap = new Map();
+  const edgeMap = new Map(); // Para evitar duplicados
   const edges = [];
 
   for (const rec of records) {
@@ -27,9 +31,10 @@ function recordsToGraph(records) {
         const fromId = toNumber(v.start);
         const toId = toNumber(v.end);
         
-        // Verificar que no exista ya esta relación
-        const existingEdge = edges.find(e => e.id === edgeId);
-        if (!existingEdge) {
+        // Usar un key único para evitar duplicados
+        const edgeKey = `${edgeId}-${fromId}-${toId}`;
+        if (!edgeMap.has(edgeKey)) {
+          edgeMap.set(edgeKey, true);
           edges.push({
             id: edgeId,
             from: fromId,
@@ -48,6 +53,11 @@ function recordsToGraph(records) {
   };
   
   console.log(`Mapper procesó: ${result.nodes.length} nodos, ${result.edges.length} relaciones`);
+  
+  // Debug: mostrar IDs para verificar duplicados
+  console.log('IDs de nodos:', result.nodes.map(n => n.id));
+  console.log('IDs de aristas:', result.edges.map(e => e.id));
+  
   return result;
 }
 
