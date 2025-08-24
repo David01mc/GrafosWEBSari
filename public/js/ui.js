@@ -12,29 +12,22 @@ async function api(path, options = {}) {
 
 async function cargarGrafo() {
   try {
+    // Primero intentamos obtener todo el grafo
     const g1 = await api("/api/cypher", {
       method: "POST",
-      body: JSON.stringify({ query: "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 500" }),
+      body: JSON.stringify({ 
+        query: `MATCH (n) 
+                OPTIONAL MATCH (n)-[r]->(m) 
+                RETURN n, r, m 
+                LIMIT 500` 
+      }),
     });
-    if (g1.nodes?.length || g1.edges?.length) {
-      pintar(g1.nodes, g1.edges);
-      await cargarSelects();
-      return;
-    }
-  } catch (e) {
-    console.error("Error en cypher n-r-m:", e.message);
-  }
-
-  try {
-    const g2 = await api("/api/cypher", {
-      method: "POST",
-      body: JSON.stringify({ query: "MATCH (n) RETURN n LIMIT 300" }),
-    });
-    pintar(g2.nodes || [], []);
+    console.log("Datos cargados:", g1);
+    pintar(g1.nodes || [], g1.edges || []);
     await cargarSelects();
   } catch (e) {
-    console.error("Error en cypher solo nodos:", e.message);
-    mostrarMensaje("No se pudo cargar el grafo. Revisa la consola.");
+    console.error("Error cargando grafo:", e.message);
+    mostrarMensaje("Error cargando el grafo. Revisa la consola.");
   }
 }
 
@@ -43,8 +36,11 @@ let physicsOn = true;
 
 function pintar(nodes, edges) {
   const container = document.getElementById("viz");
-  if (!nodes.length && !edges.length) {
-    mostrarMensaje("No hay datos que pintar por ahora.");
+  
+  console.log("Pintando - Nodos:", nodes.length, "Aristas:", edges.length);
+  
+  if (!nodes.length) {
+    mostrarMensaje("No hay nodos que mostrar.");
     return;
   }
 
@@ -59,7 +55,7 @@ function pintar(nodes, edges) {
     title: n.labels ? `Labels: ${n.labels.join(", ")}<br>${escapeHtml(JSON.stringify(n.props))}` : undefined
   }));
 
-  const visEdges = decorarAristas(
+  const visEdges = edges.length > 0 ? decorarAristas(
     edges.map(e => ({
       id: e.id,
       from: e.from,
@@ -67,9 +63,12 @@ function pintar(nodes, edges) {
       arrows: "to",
       label: e.type,
       font: { align: "horizontal", size: 12, color: '#666' },
-      color: { color: '#666', highlight: '#2e7d32' }
+      color: { color: '#666', highlight: '#2e7d32' },
+      width: 2
     }))
-  );
+  ) : [];
+
+  console.log("Nodos vis:", visNodes.length, "Aristas vis:", visEdges.length);
 
   const data = {
     nodes: new vis.DataSet(visNodes),
@@ -107,18 +106,86 @@ function pintar(nodes, edges) {
   });
 }
 
-// Nueva función para editar nodos
+// Nueva función para editar nodos con foto
 function editarNodo(nodeId) {
   const node = network.body.data.nodes.get(nodeId);
-  const nuevoNombre = prompt("Nuevo nombre:", node.label);
-  if (nuevoNombre && nuevoNombre !== node.label) {
-    api("/api/update-node", {
-      method: "PUT",
-      body: JSON.stringify({ nodeId, name: nuevoNombre })
-    }).then(() => {
-      cargarGrafo();
-    }).catch(e => alert("Error actualizando nodo: " + e.message));
-  }
+  
+  // Crear modal simple para edición
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.5); display: flex; align-items: center; 
+    justify-content: center; z-index: 1000;
+  `;
+  
+  modal.innerHTML = `
+    <div style="background: white; padding: 20px; border-radius: 8px; min-width: 300px;">
+      <h3>Editar Nodo</h3>
+      <div style="margin-bottom: 10px;">
+        <label>Nombre:</label><br>
+        <input id="edit-name" value="${node.label}" style="width: 100%; padding: 8px; margin-top: 4px;">
+      </div>
+      <div style="margin-bottom: 10px;">
+        <label>Avatar URL:</label><br>
+        <input id="edit-avatar-url" value="${node.image || ''}" style="width: 100%; padding: 8px; margin-top: 4px;">
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label>Nueva foto:</label><br>
+        <input id="edit-avatar-file" type="file" accept="image/*" style="margin-top: 4px;">
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="edit-cancel" style="padding: 8px 16px;">Cancelar</button>
+        <button id="edit-save" style="padding: 8px 16px; background: #111827; color: white;">Guardar</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  document.getElementById('edit-cancel').onclick = () => modal.remove();
+  
+  document.getElementById('edit-save').onclick = async () => {
+    const nuevoNombre = document.getElementById('edit-name').value.trim();
+    let nuevaAvatar = document.getElementById('edit-avatar-url').value.trim();
+    const archivoAvatar = document.getElementById('edit-avatar-file').files[0];
+    
+    if (!nuevoNombre) {
+      alert('El nombre es obligatorio');
+      return;
+    }
+    
+    try {
+      // Si hay nuevo archivo, subirlo primero
+      if (archivoAvatar) {
+        const fd = new FormData();
+        fd.append("file", archivoAvatar);
+        const res = await fetch("/api/upload-avatar", { method: "POST", body: fd });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || res.status);
+        nuevaAvatar = json.url;
+      }
+      
+      await api("/api/update-node", {
+        method: "PUT",
+        body: JSON.stringify({ 
+          nodeId, 
+          name: nuevoNombre, 
+          avatar_url: nuevaAvatar || null 
+        })
+      });
+      
+      modal.remove();
+      await cargarGrafo();
+      alert("Nodo actualizado exitosamente!");
+    } catch (e) {
+      alert("Error actualizando nodo: " + e.message);
+    }
+  };
+  
+  // Cerrar al hacer clic fuera
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
 }
 
 document.getElementById("btn-physics").addEventListener("click", () => {
